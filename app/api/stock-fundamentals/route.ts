@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 // What Yahoo Finance quoteSummary gives us for Indian NSE stocks
 export interface LiveFundamentals {

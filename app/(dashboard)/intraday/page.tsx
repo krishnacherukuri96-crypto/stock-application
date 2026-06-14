@@ -751,7 +751,6 @@ export default function IntradayPage() {
                 const fiiUp   = mkt!.nifty.change >= 0.5;
                 const fiiDown = mkt!.nifty.change <= -0.5;
                 const diiUp   = mkt!.bankNifty.change >= 0.3;
-                const bothAgree = (fiiUp && diiUp) || (fiiDown && !diiUp);
                 return (
                   <div className="bg-white rounded-2xl border p-4 shadow-sm">
                     <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Big Money Flow (Estimated)</div>

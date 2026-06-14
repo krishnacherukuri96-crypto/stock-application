@@ -105,7 +105,7 @@ export default function StockDetailModal({ stock, livePrice, onClose }: Props) {
 
   // Merge: live data overrides curated where available
   const pe             = live?.pe             ?? stock.pe;
-  const pb             = live?.pb             ?? stock.pb;
+  const _pb            = live?.pb             ?? stock.pb;
   const roe            = live?.roe            ?? stock.roe;
   const margin         = live?.netProfitMargin ?? stock.netProfitMargin;
   const marketCapCr    = live?.marketCapCr    ?? stock.marketCapCr;
