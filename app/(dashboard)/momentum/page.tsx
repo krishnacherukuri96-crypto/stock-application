@@ -31,7 +31,10 @@ interface MomentumResponse {
 
 const REFRESH_MS = 8000;
 
-function fmt(n: number, d = 2) { return n.toFixed(d); }
+function fmt(n: number | undefined, d = 2) {
+  if (n === undefined || n === null || !isFinite(n)) return "—";
+  return n.toFixed(d);
+}
 
 function pctColor(v: number) {
   if (v >= 2)    return "text-emerald-600 font-bold";

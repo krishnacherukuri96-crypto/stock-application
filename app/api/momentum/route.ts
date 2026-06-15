@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDhanToken } from "@/lib/dhan";
 
 // Nifty 50 stocks with Dhan Security IDs (NSE_EQ segment)
@@ -113,7 +113,18 @@ function isMarketOpen(): boolean {
   return mins >= 555 && mins <= 930; // 9:15–15:30 IST
 }
 
-export async function GET() {
+// Safely extract a number from a raw Dhan field regardless of key name
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pick(d: any, ...keys: string[]): number {
+  for (const k of keys) {
+    const v = d[k];
+    if (v !== undefined && v !== null && isFinite(Number(v))) return Number(v);
+  }
+  return 0;
+}
+
+export async function GET(req: NextRequest) {
+  const debug = req.nextUrl.searchParams.get("debug") === "true";
   const creds = await getDhanToken();
 
   if (!creds) {
@@ -144,24 +155,28 @@ export async function GET() {
     }
 
     const json = await res.json();
-    // Dhan returns data keyed by string security IDs
-    const raw: Record<string, {
-      last_price: number;
-      open: number;
-      close: number; // previous day close
-      high: number;
-      low: number;
-      volume: number;
-    }> = json?.data?.NSE_EQ ?? {};
+
+    // Return raw response when ?debug=true so we can inspect actual field names
+    if (debug) return NextResponse.json(json);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw: Record<string, any> = json?.data?.NSE_EQ ?? {};
 
     const stocks: MomentumStock[] = WATCHLIST
       .filter(s => raw[String(s.id)])
       .map(s => {
         const d = raw[String(s.id)];
+        // Handle multiple possible field names Dhan may use
+        const ltp       = pick(d, "last_price", "LTP", "lastPrice", "ltp");
+        const open      = pick(d, "open", "openPrice", "open_price");
+        const prevClose = pick(d, "close", "prev_close", "previousClose", "prevClose");
+        const high      = pick(d, "high", "highPrice", "high_price", "dayHigh");
+        const low       = pick(d, "low",  "lowPrice",  "low_price",  "dayLow");
+        const volume    = pick(d, "volume", "totalTradedQuantity", "tot_tradedQty", "tradedVolume");
         return {
           symbol: s.symbol,
           name: s.name,
-          ...classify(d.last_price, d.open, d.close, d.high, d.low, d.volume),
+          ...classify(ltp, open, prevClose, high, low, volume),
         };
       })
       .sort((a, b) => b.momentumScore - a.momentumScore);
