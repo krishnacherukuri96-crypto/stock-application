@@ -558,10 +558,17 @@ function SetupPanel({ onDone }: { onDone: () => void }) {
   const [results,  setResults]  = useState<Record<string, string>>({});
 
   async function fetchStatuses() {
+    async function safeJson(url: string) {
+      try {
+        const res  = await fetch(url);
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      } catch { return null; }
+    }
     const [u, p, o] = await Promise.all([
-      fetch("/api/scanner/universe").then(r => r.json()).catch(() => null),
-      fetch("/api/scanner/premarket").then(r => r.json()).catch(() => null),
-      fetch("/api/scanner/orb").then(r => r.json()).catch(() => null),
+      safeJson("/api/scanner/universe"),
+      safeJson("/api/scanner/premarket"),
+      safeJson("/api/scanner/orb"),
     ]);
     setUniverseStatus(u);
     setPremarketStatus(p);
@@ -574,10 +581,20 @@ function SetupPanel({ onDone }: { onDone: () => void }) {
     setRunning(step);
     try {
       const res  = await fetch(url, { method: "POST" });
-      const data = await res.json();
-      if (data.error)       setResults(r => ({ ...r, [step]: `Error: ${data.error}` }));
+      const text = await res.text();
+      if (!text) {
+        setResults(r => ({ ...r, [step]: `Server error (HTTP ${res.status}) — check Vercel logs` }));
+        await fetchStatuses();
+        setRunning(null);
+        return;
+      }
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(text); }
+      catch { setResults(r => ({ ...r, [step]: `Bad response (HTTP ${res.status})` })); await fetchStatuses(); setRunning(null); return; }
+
+      if (data.error)            setResults(r => ({ ...r, [step]: `Error: ${data.error}` }));
       else if (data.alreadyDone) setResults(r => ({ ...r, [step]: `Already done today (${data.count} stocks)` }));
-      else                  setResults(r => ({ ...r, [step]: JSON.stringify(data).slice(0, 140) }));
+      else                       setResults(r => ({ ...r, [step]: JSON.stringify(data).slice(0, 140) }));
     } catch (e) {
       setResults(r => ({ ...r, [step]: `Network error: ${e}` }));
     }

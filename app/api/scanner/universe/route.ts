@@ -64,6 +64,14 @@ function parseBhavCopy(text: string): { symbol: string; tradedValue: number }[] 
 
 // POST /api/scanner/universe — rebuild today's liquid stock universe
 export async function POST() {
+  try {
+    return await buildUniverse();
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
+}
+
+async function buildUniverse() {
   const dateStr = lastTradingDay();
   const url = `https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_${dateStr}.csv`;
 

@@ -50,6 +50,14 @@ async function fetchORBCandle(
 
 // POST /api/scanner/orb — fetch ORB for today's top stocks (call after 9:30 AM)
 export async function POST() {
+  try {
+    return await runORB();
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
+}
+
+async function runORB() {
   const mins = minsIntoDay();
   if (mins < 15) {
     return NextResponse.json(

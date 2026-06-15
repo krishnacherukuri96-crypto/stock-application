@@ -47,6 +47,11 @@ function SettingsContent() {
   const [renewing,      setRenewing]      = useState(false);
   const [renewResult,   setRenewResult]   = useState<string | null>(null);
 
+  // ── DB setup ──
+  const [dbStatus,    setDbStatus]    = useState<{ allReady: boolean; tables: Record<string, boolean> } | null>(null);
+  const [settingUpDb, setSettingUpDb] = useState(false);
+  const [dbSetupResult, setDbSetupResult] = useState<string | null>(null);
+
   // ── Instrument sync ──
   const [syncStatus,  setSyncStatus]  = useState<SyncStatus | null>(null);
   const [syncing,     setSyncing]     = useState(false);
@@ -95,10 +100,44 @@ function SettingsContent() {
     setLoadingWL(false);
   }
 
+  async function fetchDbStatus() {
+    try {
+      const res  = await fetch("/api/admin/setup-db");
+      const data = await res.json();
+      setDbStatus(data);
+    } catch { /* ignore */ }
+  }
+
+  async function setupDb() {
+    setSettingUpDb(true);
+    setDbSetupResult(null);
+    try {
+      const res  = await fetch("/api/admin/setup-db", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setDbSetupResult(`All ${data.created} tables created successfully.`);
+        await fetchDbStatus();
+        await fetchDhanStatus();
+        await fetchSyncStatus();
+      } else {
+        const errs = Object.entries(data.tables as Record<string, string>)
+          .filter(([, v]) => v !== "ok")
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("; ");
+        setDbSetupResult(`Partial failure — ${data.failed} tables failed: ${errs}`);
+        await fetchDbStatus();
+      }
+    } catch (e) {
+      setDbSetupResult(`Error: ${String(e)}`);
+    }
+    setSettingUpDb(false);
+  }
+
   useEffect(() => {
     fetchDhanStatus();
     fetchSyncStatus();
     fetchWatchlist();
+    fetchDbStatus();
   }, []);
 
   async function disconnect() {
@@ -325,7 +364,53 @@ function SettingsContent() {
         </div>
       </div>
 
-      {/* ── 2. Instrument Sync Card ── */}
+      {/* ── 2. Database Setup Card ── */}
+      {dbStatus && !dbStatus.allReady && (
+        <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b bg-amber-50 flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-gray-900">Database Setup Required</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Some tables are missing — scanner won&apos;t work until this is done</p>
+            </div>
+            <span className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full font-medium">Action needed</span>
+          </div>
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {Object.entries(dbStatus.tables).map(([name, exists]) => (
+                <div key={name} className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg ${exists ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                  <span>{exists ? "✓" : "✗"}</span>
+                  <span className="font-mono">{name}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={setupDb}
+              disabled={settingUpDb}
+              className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
+            >
+              {settingUpDb ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                  Creating tables…
+                </span>
+              ) : "Create Missing Tables"}
+            </button>
+            {dbSetupResult && (
+              <p className={`text-xs ${dbSetupResult.includes("fail") || dbSetupResult.includes("Error") ? "text-red-600" : "text-emerald-600"}`}>
+                {dbSetupResult}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {dbStatus?.allReady && dbSetupResult && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-800">
+          ✓ {dbSetupResult}
+        </div>
+      )}
+
+      {/* ── 3. Instrument Sync Card ── */}
       <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b bg-gray-50">
           <h2 className="font-semibold text-gray-900">NSE Instrument Library</h2>
