@@ -10,7 +10,10 @@ interface DhanStatus {
   expiresAt?: string;
   hoursLeft?: number;
   isExpired?: boolean;
-  updatedAt?: string;
+  updatedAt?: string | null;
+  source?:    "database" | "env_var";
+  warning?:   string;
+  reason?:    string;
 }
 
 interface SyncStatus {
@@ -234,6 +237,14 @@ function SettingsContent() {
         <div className="px-6 py-5 space-y-5">
           {dhanStatus?.connected && (
             <div className="space-y-3">
+              {/* DB unreachable warning */}
+              {dhanStatus.source === "env_var" && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+                  <p className="font-semibold">⚠ Database unreachable — token read directly from env var</p>
+                  <p>Your <code className="bg-amber-100 px-1 rounded">DATABASE_URL</code> is using the direct Supabase connection (port 5432) which doesn&apos;t work on Vercel serverless. You need the <strong>Transaction Pooler URL</strong> (port 6543).</p>
+                  <p className="font-medium">Fix: In Supabase → Project Settings → Database → Connection string → select <strong>Transaction</strong> mode → copy that URL → update <code className="bg-amber-100 px-1 rounded">DATABASE_URL</code> in Vercel env vars → redeploy.</p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Client ID</div>
@@ -241,7 +252,7 @@ function SettingsContent() {
                 </div>
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Token expires</div>
-                  <div className={`font-medium text-sm ${dhanStatus.isExpired ? "text-red-600" : dhanStatus.hoursLeft! < 4 ? "text-amber-600" : "text-gray-700"}`}>
+                  <div className={`font-medium text-sm ${dhanStatus.isExpired ? "text-red-600" : (dhanStatus.hoursLeft ?? 99) < 4 ? "text-amber-600" : "text-gray-700"}`}>
                     {dhanStatus.isExpired
                       ? "Expired — reconnect below"
                       : `${dhanStatus.hoursLeft}h remaining (auto-renews)`}
@@ -250,7 +261,7 @@ function SettingsContent() {
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Last updated</div>
                   <div className="text-gray-600 text-sm">
-                    {dhanStatus.updatedAt ? new Date(dhanStatus.updatedAt).toLocaleString("en-IN") : "—"}
+                    {dhanStatus.updatedAt ? new Date(dhanStatus.updatedAt).toLocaleString("en-IN") : dhanStatus.source === "env_var" ? "From env var" : "—"}
                   </div>
                 </div>
               </div>

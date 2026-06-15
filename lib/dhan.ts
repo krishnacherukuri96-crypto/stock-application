@@ -59,7 +59,7 @@ export async function getDhanToken(): Promise<DhanCredentials | null> {
 }
 
 // Parses DHAN_ACCESS_TOKEN (a JWT) and extracts clientId + expiry automatically
-function parseEnvToken(): { token: string; clientId: string; expiresAt: Date } | null {
+export function parseEnvToken(): { token: string; clientId: string; expiresAt: Date } | null {
   const token = process.env.DHAN_ACCESS_TOKEN;
   if (!token) return null;
 
