@@ -67,7 +67,7 @@ function SettingsContent() {
   async function fetchDhanStatus() {
     setLoadingDhan(true);
     try {
-      const res = await fetch("/api/dhan/renew");
+      const res = await fetch("/api/dhan/status");
       setDhanStatus(await res.json());
     } catch { /* ignore */ }
     setLoadingDhan(false);

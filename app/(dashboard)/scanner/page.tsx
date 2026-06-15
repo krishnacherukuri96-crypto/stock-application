@@ -828,8 +828,19 @@ export default function ScannerPage() {
         </div>
       )}
       {error && (
-        <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-          Error: {error}
+        <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 space-y-1.5">
+          <p className="font-semibold">Scanner error</p>
+          <p className="font-mono text-xs break-all">{error}</p>
+          {(error.includes("does not exist") || error.includes("DailyMetrics") || error.includes("ScannerUniverse") || error.includes("Instrument")) && (
+            <p className="text-xs text-red-600 mt-1 pt-1 border-t border-red-200">
+              ⚠ Database tables are missing. Run the SQL setup script in your Supabase SQL editor — see the setup instructions.
+            </p>
+          )}
+          {error.includes("Dhan not connected") && (
+            <p className="text-xs text-red-600 mt-1 pt-1 border-t border-red-200">
+              ⚠ Add <code className="bg-red-100 px-1 rounded">DHAN_ACCESS_TOKEN</code> to Vercel env vars and redeploy.
+            </p>
+          )}
         </div>
       )}
       {data?.orbReady === false && !needsPremarket && !showSetup && (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getDhanToken } from "@/lib/dhan";
 
 // Called by Vercel Cron every weekday at 8 AM IST (2:30 AM UTC).
 // Force-renews the Dhan access token so it's always fresh before market open.
@@ -14,12 +15,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Auto-seed DB from env var if no DB entry exists
+    const creds = await getDhanToken();
+    if (!creds) {
+      return NextResponse.json({
+        success: false,
+        reason: "No token found. Add DHAN_ACCESS_TOKEN to Vercel env vars and redeploy.",
+      });
+    }
+
     const stored = await prisma.dhanToken.findUnique({ where: { id: "singleton" } });
 
     if (!stored) {
       return NextResponse.json({
         success: false,
-        reason: "No token in database. Generate an access token from Dhan HQ and add it to DHAN_ACCESS_TOKEN env var — the app will auto-seed on next use.",
+        reason: "Token found in env var but could not be saved to database. Check that the DhanToken table exists in Supabase.",
       });
     }
 
