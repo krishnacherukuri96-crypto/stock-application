@@ -696,7 +696,14 @@ export default function ScannerPage() {
   const fetchData = useCallback(async () => {
     try {
       const res  = await fetch("/api/scanner/live");
-      const json = await res.json() as ScannerResponse;
+      const text = await res.text();
+      if (!text) throw new Error(`Server returned empty response (HTTP ${res.status})`);
+      let json: ScannerResponse;
+      try {
+        json = JSON.parse(text) as ScannerResponse;
+      } catch {
+        throw new Error(`Invalid response from server (HTTP ${res.status}). Check server logs.`);
+      }
       if (json.error) throw new Error(json.error);
       setData(json);
       setError(null);

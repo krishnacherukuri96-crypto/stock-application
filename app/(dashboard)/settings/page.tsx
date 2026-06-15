@@ -41,6 +41,8 @@ function SettingsContent() {
   const [clientId,      setClientId]      = useState("");
   const [loadingDhan,   setLoadingDhan]   = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [renewing,      setRenewing]      = useState(false);
+  const [renewResult,   setRenewResult]   = useState<string | null>(null);
 
   // ── Instrument sync ──
   const [syncStatus,  setSyncStatus]  = useState<SyncStatus | null>(null);
@@ -65,7 +67,7 @@ function SettingsContent() {
   async function fetchDhanStatus() {
     setLoadingDhan(true);
     try {
-      const res = await fetch("/api/dhan/status");
+      const res = await fetch("/api/dhan/renew");
       setDhanStatus(await res.json());
     } catch { /* ignore */ }
     setLoadingDhan(false);
@@ -101,6 +103,24 @@ function SettingsContent() {
     await fetch("/api/dhan/status", { method: "DELETE" });
     await fetchDhanStatus();
     setDisconnecting(false);
+  }
+
+  async function renewNow() {
+    setRenewing(true);
+    setRenewResult(null);
+    try {
+      const res  = await fetch("/api/dhan/renew", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setRenewResult(`Renewed — expires ${new Date(data.expiresAt).toLocaleString("en-IN")}`);
+        await fetchDhanStatus();
+      } else {
+        setRenewResult(`Failed: ${data.reason}`);
+      }
+    } catch (e) {
+      setRenewResult(`Error: ${String(e)}`);
+    }
+    setRenewing(false);
   }
 
   async function syncInstruments() {
@@ -234,7 +254,14 @@ function SettingsContent() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 pt-1">
+              <div className="flex items-center gap-3 pt-1 flex-wrap">
+                <button
+                  onClick={renewNow}
+                  disabled={renewing || dhanStatus?.isExpired}
+                  className="px-4 py-2 rounded-lg border border-indigo-200 text-sm text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                >
+                  {renewing ? "Renewing…" : "Renew Now"}
+                </button>
                 <button
                   onClick={disconnect}
                   disabled={disconnecting}
@@ -242,10 +269,12 @@ function SettingsContent() {
                 >
                   {disconnecting ? "Disconnecting…" : "Disconnect"}
                 </button>
-                <span className="text-xs text-gray-400">
-                  Token auto-renews before expiry — you rarely need to reconnect.
-                </span>
               </div>
+              {renewResult && (
+                <p className={`text-xs mt-1 ${renewResult.startsWith("Failed") || renewResult.startsWith("Error") ? "text-red-600" : "text-emerald-600"}`}>
+                  {renewResult}
+                </p>
+              )}
             </div>
           )}
 
@@ -466,11 +495,14 @@ function SettingsContent() {
       </div>
 
       {/* ── How auto-renewal works ── */}
-      <div className="bg-gray-50 rounded-xl border p-5 text-sm text-gray-600 space-y-1">
-        <p className="font-semibold text-gray-800 mb-2">How auto-renewal works</p>
-        <p>Every time the Momentum Scanner fetches data, it checks if your Dhan token expires within 2 hours.</p>
-        <p>If yes, it automatically calls Dhan&apos;s <code className="bg-gray-200 px-1 rounded text-xs">RenewToken</code> API and stores the new token.</p>
-        <p className="text-gray-400">The API Key (valid 12 months) lives in Vercel env vars and never needs manual rotation.</p>
+      <div className="bg-gray-50 rounded-xl border p-5 text-sm text-gray-600 space-y-2">
+        <p className="font-semibold text-gray-800">How token renewal works — fully automatic</p>
+        <div className="space-y-1 text-gray-500">
+          <p>🕗 <strong>Daily cron at 8:00 AM IST (weekdays)</strong> — Vercel automatically calls <code className="bg-gray-200 px-1 rounded text-xs">POST /api/dhan/renew</code> every morning before market open. Token stays fresh without any action from you.</p>
+          <p>🔄 <strong>On every scanner call</strong> — if token is within 2 hours of expiry, it renews inline as a safety net.</p>
+          <p>🔑 <strong>One-time setup</strong> — generate a token from Dhan HQ once, add it to <code className="bg-gray-200 px-1 rounded text-xs">DHAN_ACCESS_TOKEN</code> in Vercel env vars, and never touch it again.</p>
+        </div>
+        <p className="text-xs text-gray-400 pt-1 border-t">If you see &quot;Dhan not connected&quot; it means the initial token was never set, or it expired while the app was inactive. Generate a fresh token from Dhan HQ and update the env var — the cron will handle everything after that.</p>
       </div>
     </div>
   );

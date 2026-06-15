@@ -26,13 +26,22 @@ function pick(d: any, ...keys: string[]): number {
 
 // GET /api/scanner/live — real-time scanner with RVOL + ORB + live scores
 export async function GET(req: NextRequest) {
+  try {
+    return await handleLive(req);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg, stocks: [], counts: { breakout: 0, buy_setup: 0, watch: 0, avoid: 0, rvolSpike: 0 }, total: 0, marketOpen: false }, { status: 500 });
+  }
+}
+
+async function handleLive(req: NextRequest) {
   const debug = req.nextUrl.searchParams.get("debug") === "true";
   const topN  = Math.min(150, parseInt(req.nextUrl.searchParams.get("top") ?? "100"));
   const date  = todayIST();
 
   const creds = await getDhanToken();
   if (!creds) {
-    return NextResponse.json({ error: "Dhan not connected" }, { status: 503 });
+    return NextResponse.json({ error: "Dhan not connected. Connect your Dhan account in Settings.", stocks: [], counts: { breakout: 0, buy_setup: 0, watch: 0, avoid: 0, rvolSpike: 0 }, total: 0, marketOpen: isMarketOpen() }, { status: 503 });
   }
 
   // Today's pre-scored stocks

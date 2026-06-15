@@ -112,8 +112,12 @@ export async function POST() {
 
 // GET /api/scanner/orb — ORB set status for today
 export async function GET() {
-  const date    = todayIST();
-  const total   = await prisma.dailyMetrics.count({ where: { date } });
-  const orbSet  = await prisma.dailyMetrics.count({ where: { date, orbHigh: { not: null } } });
-  return NextResponse.json({ date, total, orbSet, pending: total - orbSet });
+  try {
+    const date    = todayIST();
+    const total   = await prisma.dailyMetrics.count({ where: { date } });
+    const orbSet  = await prisma.dailyMetrics.count({ where: { date, orbHigh: { not: null } } });
+    return NextResponse.json({ date, total, orbSet, pending: total - orbSet });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e), total: 0, orbSet: 0, pending: 0 }, { status: 500 });
+  }
 }

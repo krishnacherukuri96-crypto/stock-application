@@ -94,6 +94,14 @@ async function scoreStock(
 
 // POST /api/scanner/premarket — compute TA metrics for universe stocks
 export async function POST() {
+  try {
+    return await runPremarket();
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
+}
+
+async function runPremarket() {
   const creds = await getDhanToken();
   if (!creds) return NextResponse.json({ error: "Dhan not connected" }, { status: 503 });
 
@@ -173,13 +181,17 @@ export async function POST() {
 
 // GET /api/scanner/premarket — status + top picks for today
 export async function GET() {
-  const date  = todayIST();
-  const count = await prisma.dailyMetrics.count({ where: { date } });
-  const topPicks = await prisma.dailyMetrics.findMany({
-    where:   { date },
-    orderBy: { preScore: "desc" },
-    take:    10,
-    select:  { symbol: true, preScore: true, rsi14: true, ema20: true },
-  });
-  return NextResponse.json({ date, count, topPicks });
+  try {
+    const date  = todayIST();
+    const count = await prisma.dailyMetrics.count({ where: { date } });
+    const topPicks = await prisma.dailyMetrics.findMany({
+      where:   { date },
+      orderBy: { preScore: "desc" },
+      take:    10,
+      select:  { symbol: true, preScore: true, rsi14: true, ema20: true },
+    });
+    return NextResponse.json({ date, count, topPicks });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e), count: 0, topPicks: [] }, { status: 500 });
+  }
 }

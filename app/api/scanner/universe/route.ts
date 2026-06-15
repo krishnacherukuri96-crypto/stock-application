@@ -146,11 +146,15 @@ export async function POST() {
 
 // GET /api/scanner/universe — status
 export async function GET() {
-  const count = await prisma.scannerUniverse.count();
-  const sample = await prisma.scannerUniverse.findMany({
-    take:    5,
-    orderBy: { symbol: "asc" },
-    select:  { symbol: true, name: true },
-  });
-  return NextResponse.json({ count, sample });
+  try {
+    const count = await prisma.scannerUniverse.count();
+    const sample = await prisma.scannerUniverse.findMany({
+      take:    5,
+      orderBy: { symbol: "asc" },
+      select:  { symbol: true, name: true },
+    });
+    return NextResponse.json({ count, sample });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e), count: 0, sample: [] }, { status: 500 });
+  }
 }
