@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { directPrisma as prisma } from "@/lib/prisma";
 
 // POST /api/admin/setup-db
 // Creates all required tables if they don't already exist.
