@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDhanToken } from "@/lib/dhan";
+import { prisma } from "@/lib/prisma";
 
-// Nifty 50 stocks with Dhan Security IDs (NSE_EQ segment)
-// Verify / update IDs from: https://images.dhan.co/api-data/api-scrip-master.csv
-const WATCHLIST = [
+// ─── Default Nifty 50 watchlist (used when no custom watchlist is set) ──────
+// IDs are Dhan Security IDs for NSE_EQ segment.
+// Run "Sync Instruments" in Settings to unlock any NSE stock.
+const NIFTY50_DEFAULT = [
   { symbol: "RELIANCE",    name: "Reliance Industries",   id: 2885  },
   { symbol: "TCS",         name: "TCS",                   id: 11536 },
   { symbol: "HDFCBANK",    name: "HDFC Bank",             id: 1333  },
@@ -46,6 +48,40 @@ const WATCHLIST = [
   { symbol: "BRITANNIA",   name: "Britannia Industries",  id: 547   },
 ];
 
+// Build the watchlist for this request:
+// 1. If user has custom watchlist items → look up their Dhan IDs from Instrument table
+// 2. Otherwise → use NIFTY50_DEFAULT (works without any DB sync)
+async function buildWatchlist() {
+  try {
+    const customItems = await prisma.watchlistItem.findMany({
+      orderBy: { addedAt: "asc" },
+    });
+
+    if (customItems.length > 0) {
+      const symbols = customItems.map(i => i.symbol);
+      const instruments = await prisma.instrument.findMany({
+        where: { symbol: { in: symbols } },
+      });
+      const idMap = new Map(instruments.map(inst => [inst.symbol, inst]));
+
+      const resolved = symbols
+        .map(sym => {
+          const inst = idMap.get(sym);
+          return inst ? { symbol: sym, name: inst.name, id: inst.securityId } : null;
+        })
+        .filter((x): x is { symbol: string; name: string; id: number } => x !== null);
+
+      if (resolved.length > 0) {
+        return { list: resolved, source: "custom" as const };
+      }
+    }
+  } catch {
+    // DB unavailable — fall through to default
+  }
+
+  return { list: NIFTY50_DEFAULT, source: "default" as const };
+}
+
 export type MomentumStatus = "running" | "fading" | "reversing" | "flat" | "falling";
 
 export interface MomentumStock {
@@ -57,11 +93,11 @@ export interface MomentumStock {
   high: number;
   low: number;
   volume: number;
-  pctChange: number;     // % from prev close
-  openGap: number;       // % gap: open vs prev close
-  fromOpen: number;      // % move from today's open to now
-  highProximity: number; // 0–1 (1 = at day high, 0 = at day low)
-  momentumScore: number; // composite score for sorting
+  pctChange: number;
+  openGap: number;
+  fromOpen: number;
+  highProximity: number;
+  momentumScore: number;
   status: MomentumStatus;
 }
 
@@ -80,26 +116,23 @@ function classify(
   const range      = high - low;
   const highProximity = safe(range > 0 ? (ltp - low) / range : 0.5);
 
-  // Score = direction (capped ±5) + range position bonus (-2 to +2)
-  // High score: gaining AND near day high → momentum intact
-  // Low score: down OR far from high → momentum gone
-  const dirScore     = Math.max(-5, Math.min(5, pctChange));
-  const rangeScore   = (highProximity - 0.5) * 4;
+  const dirScore      = Math.max(-5, Math.min(5, pctChange));
+  const rangeScore    = (highProximity - 0.5) * 4;
   const momentumScore = parseFloat((dirScore + rangeScore).toFixed(2));
 
   let status: MomentumStatus;
-  if (pctChange >= 1.5 && highProximity >= 0.65)      status = "running";
-  else if (pctChange >= 0.3 && highProximity < 0.4)   status = "fading";
-  else if (pctChange < -1 && highProximity < 0.35)    status = "falling";
-  else if (pctChange < 0 && highProximity < 0.35)     status = "reversing";
-  else                                                  status = "flat";
+  if (pctChange >= 1.5 && highProximity >= 0.65)     status = "running";
+  else if (pctChange >= 0.3 && highProximity < 0.4)  status = "fading";
+  else if (pctChange < -1 && highProximity < 0.35)   status = "falling";
+  else if (pctChange < 0 && highProximity < 0.35)    status = "reversing";
+  else                                                 status = "flat";
 
   return {
     ltp, open, prevClose, high, low, volume,
-    pctChange: parseFloat(pctChange.toFixed(2)),
-    openGap:   parseFloat(openGap.toFixed(2)),
-    fromOpen:  parseFloat(fromOpen.toFixed(2)),
-    highProximity: parseFloat(highProximity.toFixed(3)),
+    pctChange:      parseFloat(pctChange.toFixed(2)),
+    openGap:        parseFloat(openGap.toFixed(2)),
+    fromOpen:       parseFloat(fromOpen.toFixed(2)),
+    highProximity:  parseFloat(highProximity.toFixed(3)),
     momentumScore,
     status,
   };
@@ -107,13 +140,12 @@ function classify(
 
 function isMarketOpen(): boolean {
   const ist  = new Date(Date.now() + 5.5 * 3600 * 1000);
-  const day  = ist.getUTCDay(); // 0=Sun, 6=Sat
+  const day  = ist.getUTCDay();
   if (day === 0 || day === 6) return false;
   const mins = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   return mins >= 555 && mins <= 930; // 9:15–15:30 IST
 }
 
-// Safely extract a number from a raw Dhan field regardless of key name
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function pick(d: any, ...keys: string[]): number {
   for (const k of keys) {
@@ -135,17 +167,18 @@ export async function GET(req: NextRequest) {
   }
 
   const { token, clientId } = creds;
+  const { list: watchlist, source } = await buildWatchlist();
 
   try {
     const res = await fetch("https://api.dhan.co/v2/marketfeed/ohlc", {
       method: "POST",
       headers: {
-        "access-token":  token,
-        "client-id":     clientId,
-        "Content-Type":  "application/json",
-        "Accept":        "application/json",
+        "access-token": token,
+        "client-id":    clientId,
+        "Content-Type": "application/json",
+        "Accept":       "application/json",
       },
-      body: JSON.stringify({ NSE_EQ: WATCHLIST.map(s => s.id) }),
+      body:  JSON.stringify({ NSE_EQ: watchlist.map(s => s.id) }),
       cache: "no-store",
     });
 
@@ -155,18 +188,15 @@ export async function GET(req: NextRequest) {
     }
 
     const json = await res.json();
-
-    // Return raw response when ?debug=true so we can inspect actual field names
     if (debug) return NextResponse.json(json);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw: Record<string, any> = json?.data?.NSE_EQ ?? {};
 
-    const stocks: MomentumStock[] = WATCHLIST
+    const stocks: MomentumStock[] = watchlist
       .filter(s => raw[String(s.id)])
       .map(s => {
         const d = raw[String(s.id)];
-        // Handle multiple possible field names Dhan may use
         const ltp       = pick(d, "last_price", "LTP", "lastPrice", "ltp");
         const open      = pick(d, "open", "openPrice", "open_price");
         const prevClose = pick(d, "close", "prev_close", "previousClose", "prevClose");
@@ -175,7 +205,7 @@ export async function GET(req: NextRequest) {
         const volume    = pick(d, "volume", "totalTradedQuantity", "tot_tradedQty", "tradedVolume");
         return {
           symbol: s.symbol,
-          name: s.name,
+          name:   s.name,
           ...classify(ltp, open, prevClose, high, low, volume),
         };
       })
@@ -183,9 +213,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       stocks,
-      fetchedAt:   new Date().toISOString(),
-      marketOpen:  isMarketOpen(),
-      total:       stocks.length,
+      fetchedAt:  new Date().toISOString(),
+      marketOpen: isMarketOpen(),
+      total:      stocks.length,
+      source,
     });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 502 });

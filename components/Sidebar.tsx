@@ -6,15 +6,12 @@ import { signOut } from "next-auth/react";
 
 const nav = [
   { href: "/", label: "Overview", icon: "◉" },
-  { href: "/rbi-rates", label: "RBI Rates", icon: "🏦" },
-  { href: "/inflation", label: "Inflation", icon: "📈" },
-  { href: "/gdp", label: "GDP", icon: "📊" },
-  { href: "/iip", label: "IIP", icon: "🏭" },
-  { href: "/fiscal-deficit", label: "Fiscal Deficit", icon: "💰" },
+  { href: "/macro", label: "India Macro", icon: "🇮🇳" },
   { href: "/budget", label: "Union Budget", icon: "📋" },
   { href: "/stock-selection", label: "Stock Selection", icon: "🔎" },
   { href: "/intraday",  label: "Intraday Scanner", icon: "⚡" },
   { href: "/momentum", label: "Momentum",         icon: "🔥" },
+  { href: "/scanner",  label: "Setup Scanner",    icon: "🔬" },
   { href: "/settings", label: "Settings",         icon: "⚙️" },
 ];
 

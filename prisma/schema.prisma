@@ -34,3 +34,50 @@ model DhanToken {
   expiresAt   DateTime
   updatedAt   DateTime @updatedAt
 }
+
+// Cached from Dhan instrument master CSV — NSE_EQ stocks only
+model Instrument {
+  securityId Int      @id
+  symbol     String   @unique
+  name       String
+  syncedAt   DateTime @default(now())
+
+  @@index([symbol])
+}
+
+// User's custom momentum watchlist (add any NSE stock by symbol)
+model WatchlistItem {
+  symbol  String   @id
+  addedAt DateTime @default(now())
+}
+
+// Dynamic universe: liquid NSE stocks rebuilt from NSE bhav copy each day
+model ScannerUniverse {
+  symbol     String   @id
+  securityId Int      @unique
+  name       String
+  sector     String?
+  updatedAt  DateTime @updatedAt
+
+  @@index([securityId])
+}
+
+// Per-stock per-day pre-computed TA metrics (built in pre-market job)
+model DailyMetrics {
+  symbol    String
+  date      String   // "YYYY-MM-DD" IST
+  close     Float    // previous day close price
+  ema20     Float
+  ema50     Float?
+  rsi14     Float
+  avgVol20  Float    // 20-day average daily volume
+  high20d   Float    // highest close in last 20 days (breakout level)
+  preScore  Int      // 0–100 pre-market setup score
+
+  // Set after 9:30 AM by the ORB job
+  orbHigh   Float?
+  orbLow    Float?
+
+  @@id([symbol, date])
+  @@index([date, preScore(sort: Desc)])
+}
