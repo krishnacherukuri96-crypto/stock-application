@@ -13,7 +13,9 @@ const nav = [
   { href: "/fiscal-deficit", label: "Fiscal Deficit", icon: "💰" },
   { href: "/budget", label: "Union Budget", icon: "📋" },
   { href: "/stock-selection", label: "Stock Selection", icon: "🔎" },
-  { href: "/intraday", label: "Intraday Scanner", icon: "⚡" },
+  { href: "/intraday",  label: "Intraday Scanner", icon: "⚡" },
+  { href: "/momentum", label: "Momentum",         icon: "🔥" },
+  { href: "/settings", label: "Settings",         icon: "⚙️" },
 ];
 
 export default function Sidebar() {
