@@ -3,6 +3,14 @@
     {
       "path": "/api/dhan/renew",
       "schedule": "30 2 * * 1-5"
+    },
+    {
+      "path": "/api/cron/setup",
+      "schedule": "30 3 * * 1-5"
+    },
+    {
+      "path": "/api/cron/orb",
+      "schedule": "5 4 * * 1-5"
     }
   ]
 }

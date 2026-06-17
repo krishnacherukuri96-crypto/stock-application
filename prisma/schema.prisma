@@ -74,6 +74,9 @@ model DailyMetrics {
   high20d   Float    // highest close in last 20 days (breakout level)
   preScore  Int      // 0–100 pre-market setup score
 
+  ema200    Float?   // 200-day EMA (requires 300 days of history)
+  atr14     Float?   // Average True Range 14-day (for stop-loss sizing)
+
   // Set after 9:30 AM by the ORB job
   orbHigh   Float?
   orbLow    Float?

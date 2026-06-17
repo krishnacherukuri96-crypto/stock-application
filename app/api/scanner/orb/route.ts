@@ -13,13 +13,18 @@ function minsIntoDay(): number {
   return ist.getUTCHours() * 60 + ist.getUTCMinutes() - 555; // since 9:15 AM
 }
 
+function todayISTDate(): string {
+  return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 // Fetch today's first 15-min candle from Dhan intraday endpoint
 async function fetchORBCandle(
   securityId: number,
   token: string,
   clientId: string,
-): Promise<{ orbHigh: number; orbLow: number } | null> {
+): Promise<{ orbHigh: number; orbLow: number; error?: string } | null> {
   try {
+    const today = todayISTDate();
     const res = await fetch("https://api.dhan.co/v2/charts/intraday", {
       method: "POST",
       headers: {
@@ -31,20 +36,27 @@ async function fetchORBCandle(
         securityId:      String(securityId),
         exchangeSegment: "NSE_EQ",
         instrument:      "EQUITY",
-        interval:        "15", // 15-minute candles
+        interval:        "15",   // 15-minute candles; "oi" field omitted — causes DH-905
+        fromDate:        today,
+        toDate:          today,
       }),
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return { orbHigh: 0, orbLow: 0, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
+    }
     const data = await res.json();
     // First candle covers 9:15–9:30 (the opening range)
-    if (!Array.isArray(data.high) || data.high.length === 0) return null;
+    if (!Array.isArray(data.high) || data.high.length === 0) {
+      return { orbHigh: 0, orbLow: 0, error: `Unexpected response shape: ${JSON.stringify(data).slice(0, 200)}` };
+    }
     return {
       orbHigh: data.high[0],
       orbLow:  data.low[0],
     };
-  } catch {
-    return null;
+  } catch (e) {
+    return { orbHigh: 0, orbLow: 0, error: String(e) };
   }
 }
 
@@ -92,6 +104,7 @@ async function runORB() {
   const { token, clientId } = creds;
   const BATCH = 5;
   let updated = 0;
+  const errors: string[] = [];
 
   for (let i = 0; i < pending.length; i += BATCH) {
     const batch = pending.slice(i, i + BATCH);
@@ -101,6 +114,11 @@ async function runORB() {
         if (!secId) return;
         const orb = await fetchORBCandle(secId, token, clientId);
         if (!orb) return;
+        if (orb.error || (orb.orbHigh === 0 && orb.orbLow === 0)) {
+          // Capture first few errors for diagnostics
+          if (errors.length < 3) errors.push(`${p.symbol}: ${orb.error ?? "zero values"}`);
+          return;
+        }
         try {
           await prisma.dailyMetrics.update({
             where: { symbol_date: { symbol: p.symbol, date } },
@@ -115,7 +133,13 @@ async function runORB() {
     }
   }
 
-  return NextResponse.json({ success: true, updated, pending: pending.length, date });
+  return NextResponse.json({
+    success: true,
+    updated,
+    pending: pending.length,
+    date,
+    ...(errors.length > 0 ? { sampleErrors: errors } : {}),
+  });
 }
 
 // GET /api/scanner/orb — ORB set status for today

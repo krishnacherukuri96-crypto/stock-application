@@ -22,7 +22,6 @@ export async function POST() {
       return NextResponse.json({ error: "CSV appears empty" }, { status: 502 });
     }
 
-    // Parse header — Dhan uses quoted column names
     const header = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, "").toUpperCase());
 
     const col = (...names: string[]) => {
@@ -33,12 +32,13 @@ export async function POST() {
       return -1;
     };
 
-    const exchIdx  = col("SEM_EXM_EXCH_ID", "EXCH_ID", "EXCHANGE");
-    const segIdx   = col("SEM_SEGMENT", "SEGMENT");
-    const instrIdx = col("SEM_INSTRUMENT_NAME", "INSTRUMENT_NAME", "INSTRUMENT");
-    const idIdx    = col("SEM_SMST_SECURITY_ID", "SEM_SECURITY_ID", "SECURITY_ID");
-    const symIdx   = col("SEM_TRADING_SYMBOL", "TRADING_SYMBOL", "SEM_CUSTOM_SYMBOL");
-    const nameIdx  = col("SM_SYMBOL_NAME", "SEM_INSTRUMENT_NAME", "SEM_NAME", "SYMBOL_NAME");
+    const exchIdx     = col("SEM_EXM_EXCH_ID", "EXCH_ID", "EXCHANGE");
+    const instrIdx    = col("SEM_INSTRUMENT_NAME", "INSTRUMENT_NAME", "INSTRUMENT");
+    const seriesIdx   = col("SEM_SERIES", "SERIES");
+    const instrTypeIdx = col("SEM_EXCH_INSTRUMENT_TYPE");
+    const idIdx       = col("SEM_SMST_SECURITY_ID", "SEM_SECURITY_ID", "SECURITY_ID");
+    const symIdx      = col("SEM_TRADING_SYMBOL", "TRADING_SYMBOL", "SEM_CUSTOM_SYMBOL");
+    const nameIdx     = col("SM_SYMBOL_NAME", "SEM_NAME", "SYMBOL_NAME");
 
     if (idIdx === -1 || symIdx === -1) {
       return NextResponse.json(
@@ -56,22 +56,28 @@ export async function POST() {
 
       const cols = line.split(",").map(c => c.trim().replace(/^"|"$/g, ""));
 
-      const exch  = exchIdx  >= 0 ? (cols[exchIdx]  ?? "").toUpperCase() : "";
-      const seg   = segIdx   >= 0 ? (cols[segIdx]   ?? "").toUpperCase() : "";
-      const instr = instrIdx >= 0 ? (cols[instrIdx] ?? "").toUpperCase() : "";
+      const exch      = exchIdx      >= 0 ? (cols[exchIdx]      ?? "").toUpperCase() : "";
+      const instr     = instrIdx     >= 0 ? (cols[instrIdx]     ?? "").toUpperCase() : "";
+      const series    = seriesIdx    >= 0 ? (cols[seriesIdx]    ?? "").toUpperCase() : "";
+      const instrType = instrTypeIdx >= 0 ? (cols[instrTypeIdx] ?? "").toUpperCase() : "";
 
-      // Accept NSE equity rows across all known Dhan CSV formats:
-      // Format A (legacy): SEM_EXM_EXCH_ID = "NSE_EQ"
-      // Format B (current): SEM_EXM_EXCH_ID = "NSE" + SEM_INSTRUMENT_NAME = "EQUITY"
-      // Format C: SEM_EXM_EXCH_ID = "NSE" + SEM_SEGMENT = "E"
-      // Format D: no exchange column — SEM_INSTRUMENT_NAME = "EQUITY" (BSE included but filtered below)
-      const isNSEEquity =
-        exch === "NSE_EQ" ||
-        (exch === "NSE" && instr === "EQUITY") ||
-        (exch === "NSE" && seg === "E") ||
-        (exch === "" && instr === "EQUITY");
+      // Exclude ETFs, index funds, sovereign gold bonds etc. — they have
+      // SEM_EXCH_INSTRUMENT_TYPE = "ETF". Only keep "ES" (equity stock).
+      if (instrType === "ETF") continue;
 
-      if (!isNSEEquity) continue;
+      // Only NSE cash-market equity stocks.
+      // SEM_EXM_EXCH_ID = "NSE", SEM_INSTRUMENT_NAME = "EQUITY"
+      // SEM_SERIES must be "EQ" (normal) or "BE" (trade-for-trade / exchange restricted).
+      // Excludes: SG (govt bonds), N0/N1/... (NCDs), SM (SME), MF, GS, TB, GB, etc.
+      const isNSECashEquity =
+        exch === "NSE" &&
+        instr === "EQUITY" &&
+        (series === "EQ" || series === "BE");
+
+      // Legacy format: SEM_EXM_EXCH_ID was "NSE_EQ" (no series column needed)
+      const isLegacyFormat = exch === "NSE_EQ" && instr === "EQUITY";
+
+      if (!isNSECashEquity && !isLegacyFormat) continue;
 
       const securityId = parseInt(cols[idIdx] ?? "");
       const symbol     = (cols[symIdx] ?? "").trim().toUpperCase();
@@ -80,32 +86,32 @@ export async function POST() {
 
       if (!securityId || isNaN(securityId) || !symbol) continue;
 
-      // Skip derivatives — only plain symbols (no expiry dates / strike prices embedded)
+      // Skip symbols that look like derivative contracts (contain expiry dates etc.)
       if (!/^[A-Z0-9&.\-]{1,20}$/.test(symbol)) continue;
 
       instruments.push({ securityId, symbol, name });
     }
 
     if (instruments.length === 0) {
-      // Return first few data rows to help diagnose the format
       const sampleRows = lines.slice(1, 4).map(l =>
         l.split(",").map(c => c.trim().replace(/^"|"$/g, "")).slice(0, 10),
       );
       return NextResponse.json({
         error: "No NSE equity instruments found — CSV format may have changed",
-        header: header.slice(0, 15),
+        header: header.slice(0, 20),
         sampleRows,
         totalLines: lines.length,
       }, { status: 502 });
     }
 
-    // Batch upsert in chunks of 200
-    const CHUNK = 200;
+    // Upsert in chunks. Using individual awaits (not $transaction array) to avoid
+    // hitting PgBouncer limits on very large batch transactions.
+    const CHUNK = 100;
     let upserted = 0;
 
     for (let i = 0; i < instruments.length; i += CHUNK) {
       const chunk = instruments.slice(i, i + CHUNK);
-      await prisma.$transaction(
+      await Promise.all(
         chunk.map(inst =>
           prisma.instrument.upsert({
             where:  { securityId: inst.securityId },
